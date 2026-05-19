@@ -1,39 +1,60 @@
-# hyperaccess
+<p align="center">
+  <img src="assets/banner.svg" alt="hyperaccess" width="100%">
+</p>
 
-A minimal [MCP](https://modelcontextprotocol.io) server that exposes a single
-tool, `run_command`, over authenticated HTTP. The tool runs a shell command on
-the host and returns its `stdout`, `stderr` and exit code.
+<h1 align="center">hyperaccess</h1>
 
-It is intended for self-hosting: connect it to an MCP client (Claude Code,
-Claude Desktop, etc.) and let the client run commands on a machine you control.
+<p align="center">
+  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Model_Context_Protocol-1f1f1f?style=for-the-badge" alt="MCP"></a>
+  <a href="#requirements"><img src="https://img.shields.io/badge/Node.js-%E2%89%A5_20.12-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js >= 20.12"></a>
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/TheSolyboy/hyperaccess?style=for-the-badge&color=green" alt="License: MIT"></a>
+  <a href="https://github.com/TheSolyboy/hyperaccess/stargazers"><img src="https://img.shields.io/github/stars/TheSolyboy/hyperaccess?style=for-the-badge&color=f0c000" alt="Stars"></a>
+</p>
+
+<p align="center">
+  A minimal <a href="https://modelcontextprotocol.io">MCP</a> server that exposes a single tool —
+  <code>run_command</code> — over authenticated HTTP. Connect it to an MCP client
+  (Claude Code, Claude Desktop, …) and let the client run shell commands on a
+  machine you control. One file, no database, no runtime bloat.
+</p>
+
+---
 
 ## ⚠️ Security warning
 
 `run_command` runs **arbitrary commands with no whitelist**. Anyone holding a
 valid API key can run anything as the user the server runs as. Treat the API
-key like a root password:
+key like a root password.
 
 - Keep `.env` secret. It is git-ignored and created with `chmod 600`.
 - The server binds to `127.0.0.1` by default. Do **not** set `HOST=0.0.0.0`
   unless the server sits behind a tunnel or proxy with its own access control.
 - The server refuses to start as `root`.
 - For remote access, prefer a tunnel (see [Exposing it publicly](#exposing-it-publicly-optional))
-  over opening a port directly to the internet.
+  over opening a port directly to the internet. Once public, the API key is the
+  only thing protecting an arbitrary-command-execution endpoint.
+
+---
 
 ## Features
 
-- One tool: `run_command` — returns `stdout`, `stderr`, `exitCode`, `signal`, `timedOut`.
-- Streamable HTTP transport (stateless).
-- API key auth via `x-api-key` header **or** `?api_key=` query parameter.
-- Refuses to run as root.
-- One-command installer and a systemd unit.
-- No runtime dependencies beyond `express`, `zod` and the MCP SDK.
+<table>
+<tr><td><b>One focused tool</b></td><td><code>run_command</code> runs a shell command and returns <code>stdout</code>, <code>stderr</code>, <code>exitCode</code>, <code>signal</code> and <code>timedOut</code> as structured output.</td></tr>
+<tr><td><b>Authenticated</b></td><td>API key required on every request — via the <code>x-api-key</code> header or an <code>?api_key=</code> query parameter. Constant-time comparison, <code>401</code> on mismatch.</td></tr>
+<tr><td><b>Streamable HTTP</b></td><td>Modern MCP transport, stateless — each request is fully independent. No SSE session bookkeeping.</td></tr>
+<tr><td><b>Safe by default</b></td><td>Binds to localhost, refuses to run as root, configurable command timeout and output cap.</td></tr>
+<tr><td><b>One-command install</b></td><td><code>./install.sh</code> checks Node.js, builds, generates a key, and optionally installs a systemd service.</td></tr>
+<tr><td><b>Tiny</b></td><td>~200 lines of TypeScript. Three dependencies: the MCP SDK, <code>express</code> and <code>zod</code>.</td></tr>
+</table>
+
+---
 
 ## Requirements
 
 - Node.js >= 20.12 (uses the built-in `--env-file` flag).
-- Linux with systemd for the background service (the server itself runs
-  anywhere Node.js does).
+- Linux with systemd for the background service. The server itself runs
+  anywhere Node.js does.
 
 ## Quick start
 
@@ -56,11 +77,7 @@ cp .env.example .env          # then set API_KEY
 npm start
 ```
 
-Generate a key with:
-
-```bash
-openssl rand -hex 32
-```
+Generate a key with `openssl rand -hex 32`.
 
 ## Configuration
 
@@ -103,9 +120,9 @@ systemctl status hyperaccess
 journalctl -u hyperaccess -f
 ```
 
-If Node.js is installed via a version manager (nvm, fnm, ...), its binary is
-not on the system `PATH`, so `ExecStart` must use an absolute path. Find it
-with `which node`.
+If Node.js is installed via a version manager (nvm, fnm, …), its binary is not
+on the system `PATH`, so `ExecStart` must use an absolute path. Find it with
+`which node`.
 
 ## Connecting from an MCP client
 
@@ -170,9 +187,8 @@ cloudflared tunnel route dns hyperaccess hyperaccess.example.com
 cloudflared tunnel run hyperaccess
 ```
 
-Remember: once public, the API key is the only thing protecting an
-arbitrary-command-execution endpoint. Consider an extra layer such as
-Cloudflare Access, mTLS, or an IP allowlist.
+Once public, consider an extra layer such as Cloudflare Access, mTLS, or an IP
+allowlist on top of the API key.
 
 ## Testing without an MCP client
 
@@ -199,6 +215,12 @@ A wrong or missing key returns `401`.
 | `DELETE /mcp`  | Yes  | `405` — unused in stateless mode.    |
 | `GET /health`  | No   | `{"status":"ok"}` for monitoring.    |
 
+## Star history
+
+<a href="https://star-history.com/#TheSolyboy/hyperaccess&Date">
+  <img src="https://api.star-history.com/svg?repos=TheSolyboy/hyperaccess&type=Date" alt="Star History Chart" width="600">
+</a>
+
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE)

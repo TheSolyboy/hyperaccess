@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3fb950"/>
+      <stop offset="1" stop-color="#2ea043"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="360" rx="18" fill="url(#bg)"/>
+  <rect x="1.5" y="1.5" width="1277" height="357" rx="16.5" fill="none" stroke="#30363d" stroke-width="3"/>
+
+  <!-- terminal title bar -->
+  <circle cx="44" cy="44" r="10" fill="#ff5f56"/>
+  <circle cx="78" cy="44" r="10" fill="#ffbd2e"/>
+  <circle cx="112" cy="44" r="10" fill="#27c93f"/>
+  <text x="640" y="51" text-anchor="middle" font-size="22" fill="#484f58">hyperaccess — mcp server</text>
+  <line x1="0" y1="88" x2="1280" y2="88" stroke="#30363d" stroke-width="2"/>
+
+  <!-- wordmark -->
+  <text x="640" y="222" text-anchor="middle" font-size="104" font-weight="700">
+    <tspan fill="url(#accent)">&gt;_ </tspan><tspan fill="#e6edf3">hyperaccess</tspan>
+  </text>
+
+  <!-- tagline -->
+  <text x="640" y="280" text-anchor="middle" font-size="28" fill="#7d8590">
+    One <tspan fill="#58a6ff">run_command</tspan> tool, exposed over authenticated HTTP.
+  </text>
+
+  <!-- footer line -->
+  <text x="640" y="326" text-anchor="middle" font-size="22" fill="#3fb950">
+    MCP · TypeScript · streamable HTTP · self-hostable
+  </text>
+</svg>

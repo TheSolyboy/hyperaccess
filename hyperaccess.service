@@ -1,0 +1,30 @@
+[Unit]
+Description=hyperaccess MCP server (run_command over authenticated HTTP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# install.sh fills in the placeholders below. To install manually, replace:
+#   __USER__        an unprivileged user (never root)
+#   __PROJECT_DIR__ absolute path to this project
+#   __NODE_BIN__    absolute path to the node binary (run: which node)
+User=__USER__
+WorkingDirectory=__PROJECT_DIR__
+ExecStart=__NODE_BIN__ --env-file=.env build/index.js
+
+Restart=on-failure
+RestartSec=5
+
+# Light hardening. Stricter filesystem sandboxing (ProtectSystem=strict etc.)
+# is deliberately omitted: run_command is meant to run arbitrary commands and
+# such sandboxing would break that.
+NoNewPrivileges=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hyperaccess
+
+[Install]
+WantedBy=multi-user.target

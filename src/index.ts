@@ -1,5 +1,7 @@
 import { exec } from "node:child_process";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import express, { type Request, type Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -14,6 +16,7 @@ const HOST = process.env.HOST ?? "127.0.0.1";
 const API_KEY = process.env.API_KEY ?? "";
 const COMMAND_TIMEOUT_MS = Number(process.env.COMMAND_TIMEOUT_MS ?? 0);
 const MAX_OUTPUT_BYTES = Number(process.env.MAX_OUTPUT_BYTES ?? 10 * 1024 * 1024);
+const MAX_FILE_BYTES = Number(process.env.MAX_FILE_BYTES ?? 10 * 1024 * 1024);
 
 function fatal(message: string): never {
   console.error(`FATAL: ${message}`);
@@ -86,6 +89,30 @@ function runCommand(command: string): Promise<CommandResult> {
 }
 
 // ---------------------------------------------------------------------------
+// File helpers
+// ---------------------------------------------------------------------------
+
+function requireAbsolutePath(p: string): string {
+  if (!path.isAbsolute(p)) {
+    throw new Error(`path must be absolute, got: ${p}`);
+  }
+  return p;
+}
+
+async function atomicWrite(target: string, content: string | Buffer): Promise<number> {
+  const tmp = `${target}.tmp.${randomBytes(8).toString("hex")}`;
+  const buf = typeof content === "string" ? Buffer.from(content, "utf8") : content;
+  try {
+    await fs.writeFile(tmp, buf);
+    await fs.rename(tmp, target);
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => undefined);
+    throw err;
+  }
+  return buf.byteLength;
+}
+
+// ---------------------------------------------------------------------------
 // MCP server
 // ---------------------------------------------------------------------------
 
@@ -118,6 +145,158 @@ function createMcpServer(): McpServer {
     },
     async ({ command }) => {
       const result = await runCommand(command);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        structuredContent: result as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  server.registerTool(
+    "read_file",
+    {
+      title: "Read file",
+      description:
+        "Reads a UTF-8 file from the host. Truncates the content if the file " +
+        "is larger than max_bytes (or MAX_FILE_BYTES).",
+      inputSchema: {
+        path: z
+          .string()
+          .min(1, "path must not be empty")
+          .describe("Absolute path to the file to read"),
+        max_bytes: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Maximum bytes to return; overrides MAX_FILE_BYTES"),
+      },
+      outputSchema: {
+        path: z.string(),
+        content: z.string(),
+        size: z.number(),
+        truncated: z.boolean(),
+      },
+    },
+    async ({ path: filePath, max_bytes }) => {
+      const abs = requireAbsolutePath(filePath);
+      const stat = await fs.stat(abs);
+      if (!stat.isFile()) {
+        throw new Error(`not a regular file: ${abs}`);
+      }
+      const limit = max_bytes ?? MAX_FILE_BYTES;
+      const buf = await fs.readFile(abs);
+      const truncated = buf.byteLength > limit;
+      const slice = truncated ? buf.subarray(0, limit) : buf;
+      const result = {
+        path: abs,
+        content: slice.toString("utf8"),
+        size: stat.size,
+        truncated,
+      };
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        structuredContent: result as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  server.registerTool(
+    "write_file",
+    {
+      title: "Write file",
+      description:
+        "Writes a UTF-8 file atomically (write to temp, then rename). Optionally " +
+        "creates parent directories. Fails if overwrite=false and the target exists.",
+      inputSchema: {
+        path: z
+          .string()
+          .min(1, "path must not be empty")
+          .describe("Absolute path to the file to write"),
+        content: z.string().describe("File content (UTF-8)"),
+        overwrite: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe("Overwrite an existing file. Default true."),
+        create_dirs: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("mkdir -p the parent directory first. Default false."),
+      },
+      outputSchema: {
+        path: z.string(),
+        bytes_written: z.number(),
+        created: z.boolean(),
+      },
+    },
+    async ({ path: filePath, content, overwrite, create_dirs }) => {
+      const abs = requireAbsolutePath(filePath);
+      let existed = false;
+      try {
+        await fs.stat(abs);
+        existed = true;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      }
+      if (existed && !overwrite) {
+        throw new Error(`refusing to overwrite existing file: ${abs}`);
+      }
+      if (create_dirs) {
+        await fs.mkdir(path.dirname(abs), { recursive: true });
+      }
+      const bytes = await atomicWrite(abs, content);
+      const result = { path: abs, bytes_written: bytes, created: !existed };
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        structuredContent: result as unknown as Record<string, unknown>,
+      };
+    },
+  );
+
+  server.registerTool(
+    "edit_file",
+    {
+      title: "Edit file",
+      description:
+        "Replaces a unique occurrence of old_str with new_str in a UTF-8 file. " +
+        "Fails if old_str matches zero or more than one location. Atomic write.",
+      inputSchema: {
+        path: z
+          .string()
+          .min(1, "path must not be empty")
+          .describe("Absolute path to the file to edit"),
+        old_str: z
+          .string()
+          .min(1, "old_str must not be empty")
+          .describe("Exact text to replace; must occur exactly once in the file"),
+        new_str: z.string().describe("Replacement text"),
+      },
+      outputSchema: {
+        path: z.string(),
+        matches: z.number(),
+      },
+    },
+    async ({ path: filePath, old_str, new_str }) => {
+      const abs = requireAbsolutePath(filePath);
+      const stat = await fs.stat(abs);
+      if (!stat.isFile()) {
+        throw new Error(`not a regular file: ${abs}`);
+      }
+      const original = await fs.readFile(abs, "utf8");
+      const matches = original.split(old_str).length - 1;
+      if (matches === 0) {
+        throw new Error(`old_str not found in ${abs}`);
+      }
+      if (matches > 1) {
+        throw new Error(
+          `old_str matches ${matches} locations in ${abs}; it must be unique`,
+        );
+      }
+      const updated = original.replace(old_str, new_str);
+      await atomicWrite(abs, updated);
+      const result = { path: abs, matches };
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         structuredContent: result as unknown as Record<string, unknown>,

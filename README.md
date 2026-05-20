@@ -13,19 +13,22 @@
 </p>
 
 <p align="center">
-  A minimal <a href="https://modelcontextprotocol.io">MCP</a> server that exposes a single tool —
-  <code>run_command</code> — over authenticated HTTP. Connect it to an MCP client
-  (Claude Code, Claude Desktop, …) and let the client run shell commands on a
-  machine you control. One file, no database, no runtime bloat.
+  A minimal <a href="https://modelcontextprotocol.io">MCP</a> server that exposes
+  shell and file-system tools — <code>run_command</code>, <code>read_file</code>,
+  <code>write_file</code>, <code>edit_file</code> — over authenticated HTTP. Connect
+  it to an MCP client (Claude Code, Claude Desktop, …) and let the client run
+  shell commands and edit files on a machine you control. One file, no database,
+  no runtime bloat.
 </p>
 
 ---
 
 ## ⚠️ Security warning
 
-`run_command` runs **arbitrary commands with no whitelist**. Anyone holding a
-valid API key can run anything as the user the server runs as. Treat the API
-key like a root password.
+`run_command` runs **arbitrary commands with no whitelist**, and the file tools
+read and write **any path the server user can access**. Anyone holding a valid
+API key can run anything and touch any file as the user the server runs as.
+Treat the API key like a root password.
 
 - Keep `.env` secret. It is git-ignored and created with `chmod 600`.
 - The server binds to `127.0.0.1` by default. Do **not** set `HOST=0.0.0.0`
@@ -40,7 +43,7 @@ key like a root password.
 ## Features
 
 <table>
-<tr><td><b>One focused tool</b></td><td><code>run_command</code> runs a shell command and returns <code>stdout</code>, <code>stderr</code>, <code>exitCode</code>, <code>signal</code> and <code>timedOut</code> as structured output.</td></tr>
+<tr><td><b>Focused tools</b></td><td><code>run_command</code> for shell access plus <code>read_file</code> / <code>write_file</code> / <code>edit_file</code> for file editing. All return structured output.</td></tr>
 <tr><td><b>Authenticated</b></td><td>API key required on every request — via the <code>x-api-key</code> header or an <code>?api_key=</code> query parameter. Constant-time comparison, <code>401</code> on mismatch.</td></tr>
 <tr><td><b>Streamable HTTP</b></td><td>Modern MCP transport, stateless — each request is fully independent. No SSE session bookkeeping.</td></tr>
 <tr><td><b>Safe by default</b></td><td>Binds to localhost, refuses to run as root, configurable command timeout and output cap.</td></tr>
@@ -90,6 +93,54 @@ All configuration lives in `.env`:
 | `HOST`               | `127.0.0.1`   | Bind address. `0.0.0.0` = all interfaces.         |
 | `COMMAND_TIMEOUT_MS` | `0`           | Max runtime per command. `0` = no timeout.        |
 | `MAX_OUTPUT_BYTES`   | `10485760`    | Max stdout/stderr bytes captured per command.     |
+| `MAX_FILE_BYTES`     | `10485760`    | Max bytes returned by `read_file` (overridable).  |
+
+## Tools
+
+All tools return their result both as JSON text and as `structuredContent`.
+Errors are thrown with a descriptive message and surfaced as MCP errors.
+
+### `run_command`
+
+Run a shell command via the system shell.
+
+- **Input:** `command` (string, required) — the shell command.
+- **Output:** `{ stdout, stderr, exitCode, signal, timedOut }`.
+
+### `read_file`
+
+Read a UTF-8 file. Reject anything that is not a regular file.
+
+- **Input:**
+  - `path` (string, required) — **absolute** path to the file.
+  - `max_bytes` (positive int, optional) — overrides `MAX_FILE_BYTES`.
+- **Output:** `{ path, content, size, truncated }`. `truncated` is `true` when
+  the file was larger than the limit and `content` was cut.
+
+### `write_file`
+
+Write a UTF-8 file atomically: write to `${path}.tmp.${randomHex}`, then rename.
+The temp file is removed on failure.
+
+- **Input:**
+  - `path` (string, required) — **absolute** path to the file.
+  - `content` (string, required) — file content.
+  - `overwrite` (bool, default `true`) — when `false`, fail if the target exists.
+  - `create_dirs` (bool, default `false`) — `mkdir -p` the parent first.
+- **Output:** `{ path, bytes_written, created }`. `created` is `true` if the
+  target did not exist before the write.
+
+### `edit_file`
+
+Replace the **unique** occurrence of `old_str` with `new_str`. Fails if
+`old_str` matches zero or more than one location. Uses the same atomic write
+pattern as `write_file`.
+
+- **Input:**
+  - `path` (string, required) — **absolute** path to the file.
+  - `old_str` (string, required, non-empty) — exact text to replace.
+  - `new_str` (string, required) — replacement text.
+- **Output:** `{ path, matches }` — `matches` is always `1` on success.
 
 ## Authentication
 
